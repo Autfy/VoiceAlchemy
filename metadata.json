@@ -1,0 +1,7 @@
+{
+  "name": "VoiceAlchemy Live",
+  "description": "Real-time voice style conversion using Gemini Live API. Speak into the microphone and hear your voice transformed into different styles and characters instantly.",
+  "requestFramePermissions": [
+    "microphone"
+  ]
+}
