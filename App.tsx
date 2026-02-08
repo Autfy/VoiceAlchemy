@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { GoogleGenAI, Modality, Type } from '@google/genai';
 import { fileToBase64, decode, decodeAudioData } from './utils/audioUtils';
 
@@ -45,6 +45,8 @@ const App: React.FC = () => {
   const [isProcessing, setIsProcessing] = useState(false);
   const [logs, setLogs] = useState<string[]>([]);
   const [generatedAudioUrl, setGeneratedAudioUrl] = useState<string | null>(null);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [sourcePreviewUrl, setSourcePreviewUrl] = useState<string | null>(null);
   
   // Analysis results
   const [speakerProfiles, setSpeakerProfiles] = useState<SpeakerProfile[]>([]);
@@ -64,6 +66,28 @@ const App: React.FC = () => {
     e.target.value = '';
   };
 
+  useEffect(() => {
+    if (!sourceFile) {
+      if (sourcePreviewUrl) {
+        URL.revokeObjectURL(sourcePreviewUrl);
+        setSourcePreviewUrl(null);
+      }
+      return;
+    }
+    const previewUrl = URL.createObjectURL(sourceFile);
+    setSourcePreviewUrl(previewUrl);
+    return () => {
+      URL.revokeObjectURL(previewUrl);
+    };
+  }, [sourceFile]);
+
+  useEffect(() => {
+    if (!generatedAudioUrl) return;
+    return () => {
+      URL.revokeObjectURL(generatedAudioUrl);
+    };
+  }, [generatedAudioUrl]);
+
   const handleRefUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
@@ -82,8 +106,16 @@ const App: React.FC = () => {
   };
 
   const processConversion = async () => {
+    const apiKey = import.meta.env.VITE_GEMINI_API_KEY as string | undefined;
+    if (!apiKey) {
+      const missingKeyMessage = "缺少 VITE_GEMINI_API_KEY，请在 .env.local 中配置。";
+      addLog(`错误: ${missingKeyMessage}`);
+      setErrorMessage(missingKeyMessage);
+      return;
+    }
     if (!sourceFile || refFiles.length === 0) {
       addLog("错误: 请上传源文件和至少一个目标参考音频。");
+      setErrorMessage("请上传源文件和至少一个目标参考音频。");
       return;
     }
 
@@ -93,10 +125,11 @@ const App: React.FC = () => {
     setSpeakerProfiles([]);
     setTranscription('');
     setProsodyNote('');
+    setErrorMessage(null);
     addLog("正在初始化转换流程...");
 
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+      const ai = new GoogleGenAI({ apiKey });
       
       // --- Step 1: Analyze Reference Audios (Multi-speaker) ---
       addLog(`步骤 1: 正在分析 ${refFiles.length} 个目标声音特征...`);
@@ -258,11 +291,13 @@ const App: React.FC = () => {
          addLog("成功! 转换已完成。");
       } else {
          addLog("错误: 未收到TTS模型生成的音频数据。");
+         setErrorMessage("未收到TTS模型生成的音频数据。");
       }
 
     } catch (e: any) {
       console.error(e);
       addLog(`错误: ${e.message || "发生未知错误"}`);
+      setErrorMessage(e.message || "发生未知错误");
     } finally {
       setIsProcessing(false);
     }
@@ -309,8 +344,8 @@ const App: React.FC = () => {
                         <span className="text-xs text-slate-500">支持 WAV, MP3, M4A</span>
                       </label>
                    </div>
-                   {sourceFile && (
-                      <audio controls className="w-full h-10 mt-2 block" src={URL.createObjectURL(sourceFile)} />
+                   {sourcePreviewUrl && (
+                      <audio controls className="w-full h-10 mt-2 block" src={sourcePreviewUrl} />
                    )}
                 </div>
              </div>
@@ -440,6 +475,15 @@ const App: React.FC = () => {
 
           {/* Right Column: Outputs */}
           <div className="space-y-6">
+
+             {errorMessage && (
+               <div className="gradio-container border border-red-500/40 bg-red-950/30">
+                  <div className="gradio-header text-red-200">发生错误</div>
+                  <div className="gradio-content text-sm text-red-100">
+                    {errorMessage}
+                  </div>
+               </div>
+             )}
              
              {/* Output Result */}
              <div className="gradio-container min-h-[200px] flex flex-col">
